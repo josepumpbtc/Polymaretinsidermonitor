@@ -2,111 +2,91 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import os
+import time
 
 # --- 配置区 ---
-# 建议在本地终端运行: export TELEGRAM_TOKEN="你的TOKEN"
-# 或者直接在这里填入你的 Token (注意不要泄露给他人)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4")
-CHAT_ID = "@polyinsidermonitor" 
-MIN_BET_SIZE = 100
+CHAT_ID = "@polyinsidermonitor"
+MIN_BET_USD = 3000
 
-# API 节点
-# --- 修改后的配置区 ---
+# Polymarket 官方数据接口 (覆盖 CLOB 订单簿交易)
+DATA_API_URL = "https://data-api.polymarket.com/trades"
+GAMMA_API_URL = "https://gamma-api.polymarket.com"
 
-# 1. 官方最新的 Goldsky 子图地址（专门用于抓取交易 fpmmTrades）
-
-SUBGRAPH_URL = "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/activity-subgraph/0.0.4/gn"
-# 2. 保持不变，依然可用
-GAMMA_API_URL = "https://gamma-api.polymarket.com/users?address="
+def get_market_info(condition_id):
+    """通过 Gamma API 获取市场题目"""
+    try:
+        # 缓存市场信息可以进一步优化速度
+        res = requests.get(f"{GAMMA_API_URL}/markets?condition_id={condition_id}", timeout=5)
+        data = res.json()
+        if data and len(data) > 0:
+            return data[0].get('question', "未知市场")
+    except:
+        pass
+    return "未知市场"
 
 def get_username(address):
-    """查询 Polymarket 用户名"""
+    """获取用户名"""
     try:
-        response = requests.get(f"{GAMMA_API_URL}{address}", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                return data[0].get('displayName') or data[0].get('username') or address
+        res = requests.get(f"{GAMMA_API_URL}/users?address={address}", timeout=5)
+        data = res.json()
+        if data:
+            return data[0].get('displayName') or data[0].get('username') or address
     except:
         pass
     return address
 
-def run_task():
-    print(f"开始抓取数据 - 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+def fetch_whale_bets():
+    print(f"[{datetime.now()}] 正在从 Data-API 抓取大额交易...")
     
-    # 获取过去 24 小时的时间戳
-    yesterday = datetime.now() - timedelta(days=1)
-    timestamp_cutoff = int(yesterday.timestamp())
-
-    # GraphQL 查询
-    query = """
-    {
-      fpmmTrades(
-        where: {
-          timestamp_gt: "%s",
-          fpmm_In: true, 
-          tradeAmount_gt: "1000000000"
-        }
-        orderBy: timestamp
-        orderDirection: desc
-      ) {
-        timestamp
-        creator { id }
-        tradeAmount
-        outcomeIndex
-        fpmm {
-          id
-          outcomes
-          market { question }
-        }
-      }
+    # 构造请求：筛选现金金额 > 3000 的交易
+    params = {
+        "limit": 100,
+        "filterType": "CASH",
+        "filterAmount": MIN_BET_USD,
+        "takerOnly": "true"
     }
-    """ % timestamp_cutoff
 
     try:
-        response = requests.post(SUBGRAPH_URL, json={'query': query})
-        data = response.json().get('data', {}).get('fpmmTrades', [])
-        
-        if not data:
-            msg = "📢 过去 24 小时未发现超过 $100 的交易。"
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
-                          data={"chat_id": CHAT_ID, "text": msg})
-            print(msg)
-            return
+        response = requests.get(DATA_API_URL, params=params, timeout=10)
+        trades = response.json()
+
+        if not trades:
+            print("最近未发现符合条件的交易。")
+            return None
 
         results = []
-        for trade in data:
-            addr = trade['creator']['id']
-            outcomes = trade['fpmm']['outcomes']
-            idx = int(trade['outcomeIndex'])
+        for t in trades:
+            # 这里的 match_time 通常是 ISO 格式字符串
+            trade_time = t.get('matchTime') or t.get('timestamp')
+            
             results.append({
-                "bet_size": round(float(trade['tradeAmount']) / 1e6, 2),
-                "username": get_username(addr),
-                "token_id": f"{trade['fpmm']['id']}-{idx}",
-                "token_outcome_name": outcomes[idx] if outcomes else f"Index {idx}",
-                "market": trade['fpmm']['market']['question'],
-                "time_utc": datetime.fromtimestamp(int(trade['timestamp'])).strftime('%Y-%m-%d %H:%M')
+                "bet_size": round(float(t.get('usdAmount', 0)), 2),
+                "username": get_username(t.get('taker')),
+                "token_id": t.get('assetId'),
+                "token_outcome_name": t.get('outcome'),
+                "market": get_market_info(t.get('market')),
+                "timestamp": trade_time
             })
 
-        # 生成 CSV
         df = pd.DataFrame(results)
-        filename = f"Polymarket_Whales_{datetime.now().strftime('%Y%m%d')}.csv"
+        filename = f"Whale_Bets_{datetime.now().strftime('%Y%m%d')}.csv"
         df.to_csv(filename, index=False, encoding='utf-8-sig')
-
-        # 发送到 Telegram
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-        caption = f"📊 Polymarket 每日大额交易报告 (>{MIN_BET_SIZE} USD)\n共计: {len(results)} 笔"
-        
-        with open(filename, 'rb') as f:
-            r = requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"document": f})
-        
-        if r.status_code == 200:
-            print(f"成功！文件 {filename} 已发送至频道。")
-        else:
-            print(f"发送失败: {r.text}")
+        return filename
 
     except Exception as e:
-        print(f"发生错误: {e}")
+        print(f"抓取失败: {e}")
+        return None
+
+def send_to_telegram(file_path):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+    caption = f"🐳 Polymarket 鲸鱼追踪 (单笔 > ${MIN_BET_USD})\n时间: {datetime.now().strftime('%Y-%m-%d')}"
+    with open(file_path, 'rb') as f:
+        requests.post(url, data={"chat_id": CHAT_ID, "caption": caption}, files={"document": f})
+    os.remove(file_path)
 
 if __name__ == "__main__":
-    run_task()
+    file = fetch_whale_bets()
+    if file:
+        send_to_telegram(file)
+        print("报告已发送！")
