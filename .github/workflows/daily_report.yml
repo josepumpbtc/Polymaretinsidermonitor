@@ -1,0 +1,29 @@
+name: Daily Polymarket Monitor
+
+on:
+  schedule:
+    # 每天 UTC 时间 00:00 运行 (对应北京时间早上 8:00)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 允许你手动点击按钮运行测试
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pandas
+
+      - name: Run script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: python polymarket_agent.py
