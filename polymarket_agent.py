@@ -7,7 +7,7 @@ import time
 # --- 配置区 ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4")
 CHAT_ID = "@polyinsidermonitor"
-MIN_BET_USD = 3000
+MIN_BET_USD = 135
 
 # Polymarket 官方数据接口 (覆盖 CLOB 订单簿交易)
 DATA_API_URL = "https://data-api.polymarket.com/trades"
@@ -52,7 +52,7 @@ def fetch_whale_bets():
         trades = response.json()
 
         if not trades:
-            print("最近未发现符合条件的交易。")
+            print("最近未发现符合条件的交易。 135 ")
             return None
 
         results = []
