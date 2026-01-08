@@ -11,7 +11,12 @@ CHAT_ID = "@polyinsidermonitor"
 MIN_BET_SIZE = 100
 
 # API 节点
-SUBGRAPH_URL = "https://api.thegraph.com/subgraphs/name/polymarket/matic-markets-v2"
+# --- 修改后的配置区 ---
+
+# 1. 官方最新的 Goldsky 子图地址（专门用于抓取交易 fpmmTrades）
+
+SUBGRAPH_URL = "https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/activity-subgraph/0.0.4/gn"
+# 2. 保持不变，依然可用
 GAMMA_API_URL = "https://gamma-api.polymarket.com/users?address="
 
 def get_username(address):
