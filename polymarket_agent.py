@@ -49,7 +49,7 @@ def run_task():
     print(f"[{datetime.now()}] 正在抓取大额交易 (>${MIN_BET_USD})...")
     
     params = {
-        "limit": 100,
+        "limit": 1000,
         "filterType": "CASH",     # 按美金金额过滤
         "filterAmount": MIN_BET_USD,
         "takerOnly": "true"
