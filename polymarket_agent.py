@@ -45,7 +45,7 @@ def run_task():
         where: {
           timestamp_gt: "%s",
           fpmm_In: true, 
-          tradeAmount_gt: "3000000000"
+          tradeAmount_gt: "1000000000"
         }
         orderBy: timestamp
         orderDirection: desc
