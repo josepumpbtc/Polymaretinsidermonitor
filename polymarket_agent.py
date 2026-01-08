@@ -63,7 +63,7 @@ def run_task():
         data = response.json().get('data', {}).get('fpmmTrades', [])
         
         if not data:
-            msg = "📢 过去 24 小时未发现超过 $3000 的交易。"
+            msg = "📢 过去 24 小时未发现超过 $100 的交易。"
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
                           data={"chat_id": CHAT_ID, "text": msg})
             print(msg)
