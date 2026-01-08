@@ -8,7 +8,7 @@ import os
 # 或者直接在这里填入你的 Token (注意不要泄露给他人)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4")
 CHAT_ID = "@polyinsidermonitor" 
-MIN_BET_SIZE = 3000
+MIN_BET_SIZE = 1000
 
 # API 节点
 SUBGRAPH_URL = "https://api.thegraph.com/subgraphs/name/polymarket/matic-markets-v2"
