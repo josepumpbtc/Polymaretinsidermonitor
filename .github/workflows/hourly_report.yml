@@ -23,8 +23,7 @@ jobs:
         run: |
           pip install requests pandas
 
-      - name: Run Insider Monitor
+      - name: Run script
         env:
-          # 请确保在 GitHub Settings -> Secrets -> Actions 中添加了此变量
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}  # 这一行至关重要
         run: python polymarket_agent.py
