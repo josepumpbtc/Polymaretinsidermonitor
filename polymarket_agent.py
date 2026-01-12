@@ -84,10 +84,23 @@ def run_task():
             print("当前无符合条件的交易。")
             return
 
+        # 建议修改 run_task 中的金额提取部分
         for t in trades:
-            # 关键修复：同时检查 usdcSize 和 amount
-            raw_amt = t.get('usdcSize') or t.get('amount')
-            amt = float(raw_amt) if raw_amt else 0
+            # 兼容性修复：依次尝试不同的金额字段
+            raw_amt = t.get('usdcSize') or t.get('amount') or t.get('cash')
+            if raw_amt is None:
+                # 如果是订单簿撮合，尝试 price * size
+                try:
+                    raw_amt = float(t.get('price', 0)) * float(t.get('size', 0))
+                except:
+                    raw_amt = 0
+                    
+            amt = float(raw_amt)
+            print(f"检查交易: 用户 {t.get('proxyWallet')[:10]}... 金额: ${amt}") # 调试日志
+            
+            if amt < MIN_BET_USD:
+                continue
+            # ... 后续逻辑 ...
             
             if amt < MIN_BET_USD:
                 continue
