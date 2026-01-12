@@ -50,12 +50,13 @@ def get_user_trade_count(address):
     return 0
 
 def send_instant_alert(trade, profile, bet_count):
-    """发送即时内幕预警消息"""
+    """发送即时内幕预警消息（带调试输出版）"""
     created_days = "未知"
     if profile['created_at']:
         delta = datetime.now(profile['created_at'].tzinfo) - profile['created_at']
         created_days = f"{delta.days} 天"
 
+    # 构建消息文本
     msg = (
         f"🚨 *疑似内幕交易警报* 🚨\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -70,11 +71,27 @@ def send_instant_alert(trade, profile, bet_count):
         f"🔍 *特征*: 新账号 / 低频交易者大额下单"
     )
     
+    # Telegram API 请求
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID, 
+        "text": msg, 
+        "parse_mode": "Markdown"
+    }
+
     try:
-        requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+        print(f"正在尝试发送消息到频道 {CHAT_ID}...")
+        r = requests.post(url, json=payload, timeout=10)
+        
+        if r.status_code == 200:
+            print("✅ Telegram 消息发送成功")
+        else:
+            # 关键：如果失败，这里会打印出 Telegram 返回的具体错误信息
+            print(f"❌ Telegram API 报错: {r.status_code} - {r.text}")
+            print(f"提示：请检查 Bot 是否为频道管理员，且 CHAT_ID '{CHAT_ID}' 是否正确。")
+            
     except Exception as e:
-        print(f"发送 Telegram 失败: {e}")
+        print(f"❌ 网络请求异常，无法连接到 Telegram: {e}")
 
 def run_task():
     print(f"[{datetime.now()}] 正在扫描大额交易...")
