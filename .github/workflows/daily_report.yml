@@ -1,15 +1,14 @@
-name: Daily Polymarket Monitor
+name: Hourly Polymarket Insider Monitor
 
 on:
   schedule:
-    # 每天 UTC 时间 00:00 运行 (对应北京时间早上 8:00)
-    - cron: '0 0 * * *'
-  workflow_dispatch: # 允许你手动点击按钮运行测试
+    # 每小时运行一次 (0分触发)
+    - cron: '0 * * * *'
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
