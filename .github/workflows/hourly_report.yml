@@ -1,13 +1,13 @@
-name: Daily Polymarket Monitor
+name: Hourly Polymarket Insider Monitor
 
 on:
   schedule:
-    # 每天 UTC 时间 00:00 运行 (对应北京时间早上 8:00)
-    - cron: '0 0 * * *'
-  workflow_dispatch: # 允许你手动点击按钮运行测试
+    # 每小时运行一次 (UTC 时间每小时 0 分)
+    - cron: '0 * * * *'
+  workflow_dispatch: # 支持手动运行测试
 
 jobs:
-  build:
+  monitor:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +23,8 @@ jobs:
         run: |
           pip install requests pandas
 
-      - name: Run script
+      - name: Run Insider Monitor
         env:
+          # 请确保在 GitHub Settings -> Secrets -> Actions 中添加了此变量
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: python polymarket_agent.py

@@ -42,15 +42,6 @@ Invite your bot (@polyinsidertstbot) to your channel (@polyinsidermonitor).
 
 Promote the bot to Administrator with permission to Post Messages.
 
-2. GitHub Secrets Setup
-To keep your credentials secure, do not hardcode them. Add them to your GitHub Repository:
-
-Go to Settings > Secrets and variables > Actions.
-
-Click New repository secret and add:
-
-TELEGRAM_TOKEN: 8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4
-
 3. Deployment
 Push the polymarket_agent.py script to your main branch.
 
