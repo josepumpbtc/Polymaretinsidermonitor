@@ -5,125 +5,130 @@ import os
 import time
 
 # --- 配置区 ---
+# 建议在 GitHub Secrets 中设置 TELEGRAM_TOKEN
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4")
 CHAT_ID = "@polyinsidermonitor"
-MIN_BET_USD = 3000
+MIN_BET_USD = 3000  
 
+# API 节点
 DATA_API_URL = "https://data-api.polymarket.com/trades"
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 
-user_cache = {}
-
-def get_username(address):
-    if not address: return "Unknown"
-    if address in user_cache: return user_cache[address]
+def get_user_profile(address):
+    """获取用户详细画像：显示名称、创建时间"""
+    if not address:
+        return None
     try:
         res = requests.get(f"{GAMMA_API_URL}/users?address={address}", timeout=5)
         if res.status_code == 200:
             data = res.json()
-            if data:
-                name = data[0].get('displayName') or data[0].get('username') or address
-                user_cache[address] = name
-                return name
-    except: pass
-    return address
+            if data and len(data) > 0:
+                user_info = data[0]
+                name = user_info.get('displayName') or user_info.get('username') or address
+                created_at_str = user_info.get('createdAt')
+                
+                created_at = None
+                if created_at_str:
+                    # 转换 ISO 格式时间
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                
+                return {"name": name, "created_at": created_at}
+    except:
+        pass
+    return {"name": address, "created_at": None}
+
+def get_user_trade_count(address):
+    """查询用户历史交易总笔数"""
+    try:
+        # 使用 Data API 查询该用户的活动记录
+        res = requests.get(f"https://data-api.polymarket.com/activity?user={address}&limit=20", timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            return len(data) if data else 0
+    except:
+        return 999  # 出错时默认为老用户，避免误报
+    return 0
+
+def send_instant_alert(trade, profile, bet_count):
+    """发送即时内幕预警消息"""
+    created_days = "未知"
+    if profile['created_at']:
+        delta = datetime.now(profile['created_at'].tzinfo) - profile['created_at']
+        created_days = f"{delta.days} 天"
+
+    msg = (
+        f"🚨 *疑似内幕交易警报* 🚨\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"💰 投注金额: `${trade['bet_size']}` USDC\n"
+        f"👤 用户: `{profile['name']}`\n"
+        f"📅 账号年龄: `{created_days}`\n"
+        f"📊 历史笔数: `{bet_count}` 次\n"
+        f"🎯 预测结果: *{trade['outcome']}*\n"
+        f"🏟️ 市场题目: {trade['market']}\n"
+        f"⏰ 时间 (UTC): {trade['timestamp']}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔍 *特征*: 新账号 / 低频交易者大额下单"
+    )
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+    except Exception as e:
+        print(f"发送 Telegram 失败: {e}")
 
 def run_task():
-    print(f"[{datetime.now()}] 开始抓取过去 24 小时的所有大额交易...")
+    print(f"[{datetime.now()}] 正在扫描大额交易...")
     
-    # 1. 设置 24 小时的时间截止线
-    cutoff_time = datetime.now() - timedelta(hours=24)
-    cutoff_ts = int(cutoff_time.timestamp())
-    
-    all_results = []
-    last_timestamp = None # 用于分页
-    
-    while True:
-        # 2. 构造请求参数
-        params = {
-            "limit": 100,
-            "filterType": "CASH",
-            "filterAmount": MIN_BET_USD,
-            "takerOnly": "true"
-        }
-        # 如果有上一次抓取的最后时间，则从那个时间点继续往前查
-        if last_timestamp:
-            params["timestamp"] = last_timestamp
+    params = {
+        "limit": 50,
+        "filterType": "CASH",
+        "filterAmount": MIN_BET_USD,
+        "takerOnly": "true"
+    }
 
-        try:
-            response = requests.get(DATA_API_URL, params=params, timeout=15)
-            trades = response.json()
+    try:
+        response = requests.get(DATA_API_URL, params=params, timeout=15)
+        trades = response.json()
 
-            if not trades or len(trades) == 0:
-                break
+        if not trades:
+            print("未发现大额交易。")
+            return
 
-            finished = False
-            for t in trades:
-                # 获取该交易的时间戳
-                raw_ts = int(t.get('timestamp'))
-                # API 有时返回毫秒，需要转换
-                ts_seconds = raw_ts / 1000 if raw_ts > 10**11 else raw_ts
+        for t in trades:
+            # 1. 提取金额（优先使用 usdcSize 确保准确）
+            amt = float(t.get('usdcSize') or t.get('amount') or 0)
+            if amt < MIN_BET_USD:
+                continue
+
+            user_addr = t.get('proxyWallet')
+            if not user_addr: continue
+
+            # 2. 获取用户信息和交易频次
+            profile = get_user_profile(user_addr)
+            bet_count = get_user_trade_count(user_addr)
+
+            # 3. 判定逻辑：(金额 > 3000) AND (账号年龄 <= 10天 OR 交易次数 < 10)
+            is_new_account = False
+            if profile['created_at']:
+                days_old = (datetime.now(profile['created_at'].tzinfo) - profile['created_at']).days
+                if days_old <= 10:
+                    is_new_account = True
+
+            if is_new_account or bet_count < 10:
+                print(f"🚩 命中目标: {profile['name']}，笔数: {bet_count}")
                 
-                # 如果这笔交易已经超过 24 小时，停止抓取
-                if ts_seconds < cutoff_ts:
-                    finished = True
-                    break
-
-                # 提取数据
-                amt = t.get('amount') or (float(t.get('price', 0)) * float(t.get('size', 0)))
-                time_str = datetime.fromtimestamp(ts_seconds).strftime('%Y-%m-%d %H:%M:%S')
-
-                all_results.append({
-                    "bet_size": round(float(amt), 2),
-                    "username": get_username(t.get('proxyWallet')),
-                    "token_id": t.get('asset'),
-                    "token_outcome_name": t.get('outcome'),
+                trade_info = {
+                    "bet_size": round(amt, 2),
+                    "outcome": t.get('outcome'),
                     "market": t.get('title') or "Unknown Market",
-                    "timestamp": time_str
-                })
+                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
                 
-                # 更新最后一次看到的时间戳，供下一页使用
-                last_timestamp = raw_ts
+                send_instant_alert(trade_info, profile, bet_count)
+                time.sleep(1) # 频率限制
 
-            print(f"目前已抓取 {len(all_results)} 笔符合条件的交易...")
-            
-            if finished:
-                break
-            
-            # 稍微停顿，避免请求过快被封 IP
-            time.sleep(0.5)
-
-        except Exception as e:
-            print(f"抓取分页时出错: {e}")
-            break
-
-    # 3. 生成 CSV 并发送
-    if all_results:
-        df = pd.DataFrame(all_results)
-        # 去重（防止分页重叠）
-        df = df.drop_duplicates()
-        df = df[["bet_size", "username", "token_id", "token_outcome_name", "market", "timestamp"]]
-        
-        filename = f"Whale_Bets_24H_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-        df.to_csv(filename, index=False, encoding='utf-8-sig')
-        
-        # 发送至 Telegram
-        send_to_telegram(filename, len(df))
-    else:
-        print("过去 24 小时内未发现符合条件的交易。")
-
-def send_to_telegram(file_path, count):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-    caption = (
-        f"🐳 *Polymarket 24小时全量报告*\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"💰 门槛: > ${MIN_BET_USD}\n"
-        f"📊 总计: {count} 笔交易\n"
-        f"📅 周期: 过去 24 小时\n"
-    )
-    with open(file_path, 'rb') as f:
-        requests.post(url, data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "Markdown"}, files={"document": f})
-    os.remove(file_path)
+    except Exception as e:
+        print(f"❌ 执行错误: {e}")
 
 if __name__ == "__main__":
     run_task()
