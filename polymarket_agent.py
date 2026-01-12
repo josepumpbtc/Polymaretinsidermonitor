@@ -14,53 +14,96 @@ DATA_API_URL = "https://data-api.polymarket.com"
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 
 def get_user_profile(address):
-    """获取显示名称和创建时间"""
+    """获取显示名称和创建时间（通过第一笔交易时间估算）"""
+    # 由于 Gamma API 需要认证，改用 data-api 获取用户的第一笔交易时间
     try:
-        res = requests.get(f"{GAMMA_API_URL}/users?address={address}", timeout=10)
+        # 方法1: 尝试从用户活动数据中获取第一笔交易时间
+        res = requests.get(f"{DATA_API_URL}/activity?user={address}&limit=1000&sort=asc", timeout=10)
         if res.status_code == 200:
             data = res.json()
-            if data:
-                user = data[0]
-                # 调试：打印 API 返回的原始数据
-                print(f"🔍 DEBUG - API 返回的用户数据: {user}")
+            if data and len(data) > 0:
+                # 获取第一笔交易的时间戳
+                first_trade = data[0]
+                # 尝试多种可能的时间字段
+                time_str = (first_trade.get('timestamp') or 
+                           first_trade.get('time') or 
+                           first_trade.get('createdAt') or
+                           first_trade.get('created_at') or
+                           first_trade.get('date'))
                 
-                # 尝试多种可能的字段名
-                created_at = user.get('createdAt') or user.get('created_at') or user.get('created')
-                
-                if created_at:
+                created_at = None
+                if time_str:
                     try:
-                        # 处理不同的日期格式
-                        if isinstance(created_at, (int, float)):
-                            # 如果是时间戳
-                            dt = datetime.fromtimestamp(created_at, tz=timezone.utc)
-                        elif isinstance(created_at, str):
+                        # 处理不同的时间格式
+                        if isinstance(time_str, (int, float)):
+                            # 如果是时间戳（秒或毫秒）
+                            if time_str > 1e10:  # 毫秒时间戳
+                                dt = datetime.fromtimestamp(time_str / 1000, tz=timezone.utc)
+                            else:  # 秒时间戳
+                                dt = datetime.fromtimestamp(time_str, tz=timezone.utc)
+                        elif isinstance(time_str, str):
                             # 处理 ISO 格式字符串
-                            if created_at.endswith('Z'):
-                                dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            if time_str.endswith('Z'):
+                                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
                             else:
-                                dt = datetime.fromisoformat(created_at)
-                            # 如果没有时区信息，假设是 UTC
+                                dt = datetime.fromisoformat(time_str)
                             if dt.tzinfo is None:
                                 dt = dt.replace(tzinfo=timezone.utc)
                         else:
                             dt = None
-                        print(f"✅ DEBUG - 解析的创建时间: {dt}")
+                        
+                        if dt:
+                            created_at = dt
+                            print(f"✅ DEBUG - 从第一笔交易获取创建时间: {created_at}")
                     except Exception as parse_error:
-                        print(f"⚠️ DEBUG - 日期解析失败: {parse_error}, 原始值: {created_at}")
-                        dt = None
-                else:
-                    print(f"⚠️ DEBUG - 未找到创建时间字段，可用字段: {list(user.keys())}")
-                    dt = None
+                        print(f"⚠️ DEBUG - 时间解析失败: {parse_error}, 原始值: {time_str}")
                 
-                return {"name": user.get('displayName') or address, "created_at": dt}
-            else:
-                print(f"⚠️ DEBUG - API 返回空数据")
-        else:
-            print(f"⚠️ DEBUG - API 请求失败，状态码: {res.status_code}, 响应: {res.text[:200]}")
+                # 尝试从交易数据中获取用户名（如果有）
+                display_name = (first_trade.get('user') or 
+                               first_trade.get('username') or 
+                               first_trade.get('displayName') or 
+                               address)
+                
+                return {"name": display_name, "created_at": created_at}
+        
+        # 方法2: 如果 activity API 没有返回数据，尝试从 trades API 获取
+        print(f"⚠️ DEBUG - activity API 无数据，尝试从 trades API 获取...")
+        res2 = requests.get(f"{DATA_API_URL}/trades?user={address}&limit=1&sort=asc", timeout=10)
+        if res2.status_code == 200:
+            trades = res2.json()
+            if trades and len(trades) > 0:
+                first_trade = trades[0]
+                time_str = (first_trade.get('timestamp') or 
+                           first_trade.get('time') or 
+                           first_trade.get('createdAt') or
+                           first_trade.get('created_at'))
+                
+                if time_str:
+                    try:
+                        if isinstance(time_str, (int, float)):
+                            if time_str > 1e10:
+                                dt = datetime.fromtimestamp(time_str / 1000, tz=timezone.utc)
+                            else:
+                                dt = datetime.fromtimestamp(time_str, tz=timezone.utc)
+                        elif isinstance(time_str, str):
+                            if time_str.endswith('Z'):
+                                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                            else:
+                                dt = datetime.fromisoformat(time_str)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                        
+                        if dt:
+                            print(f"✅ DEBUG - 从第一笔交易获取创建时间: {dt}")
+                            return {"name": address, "created_at": dt}
+                    except Exception as e:
+                        print(f"⚠️ DEBUG - 时间解析失败: {e}")
+        
     except Exception as e:
-        print(f"❌ 获取 Profile 失败 ({address}): {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"⚠️ 获取用户 Profile 失败 ({address}): {e}")
+    
+    # 如果所有方法都失败，返回默认值
+    print(f"⚠️ DEBUG - 无法获取账号创建时间，使用默认值")
     return {"name": address, "created_at": None}
 
 def get_user_trade_count(address):
@@ -102,11 +145,14 @@ def test_user_profile(address=None):
             print(f"使用示例地址: {address}")
     
     print(f"\n🔍 测试地址: {address}")
-    print(f"🌐 API URL: {GAMMA_API_URL}/users?address={address}\n")
+    print(f"🌐 测试 Data API: {DATA_API_URL}/activity?user={address}\n")
     
-    # 测试 API 请求
+    # 测试 Data API 请求（因为 Gamma API 需要认证）
     try:
-        res = requests.get(f"{GAMMA_API_URL}/users?address={address}", timeout=10)
+        print("=" * 60)
+        print("📡 测试 Data API - Activity 端点")
+        print("=" * 60)
+        res = requests.get(f"{DATA_API_URL}/activity?user={address}&limit=10&sort=asc", timeout=10)
         
         print(f"📊 HTTP 状态码: {res.status_code}")
         print(f"📋 响应头: {dict(res.headers)}\n")
@@ -116,65 +162,85 @@ def test_user_profile(address=None):
             print(f"📦 响应数据类型: {type(data)}")
             print(f"📏 响应数据长度: {len(data) if isinstance(data, (list, dict)) else 'N/A'}\n")
             
-            if data:
-                if isinstance(data, list) and len(data) > 0:
-                    user = data[0]
-                    print("=" * 60)
-                    print("📄 用户数据详情:")
-                    print("=" * 60)
-                    print(json.dumps(user, indent=2, ensure_ascii=False, default=str))
-                    print("=" * 60)
-                    
-                    print("\n🔑 所有可用字段:")
-                    for key, value in user.items():
-                        value_str = str(value)
-                        if len(value_str) > 100:
-                            value_str = value_str[:100] + "..."
-                        print(f"  - {key}: {value_str}")
-                    
-                    print("\n" + "=" * 60)
-                    print("🔍 查找创建时间相关字段:")
-                    print("=" * 60)
-                    
-                    # 查找所有可能包含时间的字段
-                    time_fields = []
-                    for key, value in user.items():
-                        key_lower = key.lower()
-                        if any(keyword in key_lower for keyword in ['time', 'date', 'create', 'join', 'register']):
-                            time_fields.append((key, value))
-                    
-                    if time_fields:
-                        for field_name, field_value in time_fields:
-                            print(f"\n  ✅ 找到时间相关字段: {field_name}")
-                            print(f"     类型: {type(field_value)}")
-                            print(f"     值: {field_value}")
-                    else:
-                        print("  ⚠️ 未找到任何时间相关字段")
-                    
-                    # 测试解析
-                    print("\n" + "=" * 60)
-                    print("🧪 测试解析函数:")
-                    print("=" * 60)
-                    profile = get_user_profile(address)
-                    print(f"\n📊 解析结果:")
-                    print(f"  名称: {profile['name']}")
-                    print(f"  创建时间: {profile['created_at']}")
-                    if profile['created_at']:
-                        days = (datetime.now(timezone.utc) - profile['created_at']).days
-                        print(f"  账号年龄: {days} 天")
-                    else:
-                        print(f"  账号年龄: 未知")
-                    
-                elif isinstance(data, dict):
-                    print("📄 响应是字典格式:")
-                    print(json.dumps(data, indent=2, ensure_ascii=False, default=str))
+            if data and isinstance(data, list) and len(data) > 0:
+                first_activity = data[0]
+                print("=" * 60)
+                print("📄 第一笔活动数据详情:")
+                print("=" * 60)
+                print(json.dumps(first_activity, indent=2, ensure_ascii=False, default=str))
+                print("=" * 60)
+                
+                print("\n🔑 所有可用字段:")
+                for key, value in first_activity.items():
+                    value_str = str(value)
+                    if len(value_str) > 100:
+                        value_str = value_str[:100] + "..."
+                    print(f"  - {key}: {value_str}")
+                
+                print("\n" + "=" * 60)
+                print("🔍 查找时间相关字段:")
+                print("=" * 60)
+                
+                # 查找所有可能包含时间的字段
+                time_fields = []
+                for key, value in first_activity.items():
+                    key_lower = key.lower()
+                    if any(keyword in key_lower for keyword in ['time', 'date', 'create', 'join', 'register']):
+                        time_fields.append((key, value))
+                
+                if time_fields:
+                    for field_name, field_value in time_fields:
+                        print(f"\n  ✅ 找到时间相关字段: {field_name}")
+                        print(f"     类型: {type(field_value)}")
+                        print(f"     值: {field_value}")
                 else:
-                    print(f"⚠️ 响应数据格式异常: {type(data)}")
+                    print("  ⚠️ 未找到任何时间相关字段")
+                
+                # 测试解析
+                print("\n" + "=" * 60)
+                print("🧪 测试解析函数:")
+                print("=" * 60)
+                profile = get_user_profile(address)
+                print(f"\n📊 解析结果:")
+                print(f"  名称: {profile['name']}")
+                print(f"  创建时间: {profile['created_at']}")
+                if profile['created_at']:
+                    days = (datetime.now(timezone.utc) - profile['created_at']).days
+                    print(f"  账号年龄: {days} 天")
+                else:
+                    print(f"  账号年龄: 未知")
+                    
+            elif isinstance(data, dict):
+                print("📄 响应是字典格式:")
+                print(json.dumps(data, indent=2, ensure_ascii=False, default=str))
             else:
-                print("⚠️ API 返回空数据")
+                print("⚠️ API 返回空数据或无活动记录")
         else:
-            print(f"❌ API 请求失败")
+            print(f"❌ Activity API 请求失败")
             print(f"响应内容: {res.text[:500]}")
+        
+        # 如果 activity API 没有数据，尝试 trades API
+        if res.status_code != 200 or not data or len(data) == 0:
+            print("\n" + "=" * 60)
+            print("📡 测试 Data API - Trades 端点")
+            print("=" * 60)
+            res2 = requests.get(f"{DATA_API_URL}/trades?user={address}&limit=10&sort=asc", timeout=10)
+            print(f"📊 HTTP 状态码: {res2.status_code}")
+            
+            if res2.status_code == 200:
+                trades = res2.json()
+                if trades and len(trades) > 0:
+                    first_trade = trades[0]
+                    print(f"📏 找到 {len(trades)} 笔交易")
+                    print("\n📄 第一笔交易数据:")
+                    print(json.dumps(first_trade, indent=2, ensure_ascii=False, default=str))
+                    
+                    # 查找时间字段
+                    print("\n🔍 查找时间相关字段:")
+                    for key, value in first_trade.items():
+                        key_lower = key.lower()
+                        if any(keyword in key_lower for keyword in ['time', 'date', 'create']):
+                            print(f"  ✅ {key}: {value} (类型: {type(value)})")
             
     except Exception as e:
         print(f"❌ 测试失败: {e}")
