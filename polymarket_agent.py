@@ -5,125 +5,111 @@ import os
 import time
 
 # --- 配置区 ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8289795345:AAGwY_sVtvsZBC2VEazZG3Wl1hh9ltAEqo4")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = "@polyinsidermonitor"
-MIN_BET_USD = 3000
-
+MIN_BET_USD = 3000  
 DATA_API_URL = "https://data-api.polymarket.com/trades"
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 
-user_cache = {}
-
-def get_username(address):
-    if not address: return "Unknown"
-    if address in user_cache: return user_cache[address]
+def get_user_profile(address):
+    """
+    获取用户详细画像：创建时间、交易频次、显示名称
+    """
+    if not address:
+        return None
+    
     try:
+        # 获取基础资料
         res = requests.get(f"{GAMMA_API_URL}/users?address={address}", timeout=5)
         if res.status_code == 200:
             data = res.json()
             if data:
-                name = data[0].get('displayName') or data[0].get('username') or address
-                user_cache[address] = name
-                return name
-    except: pass
-    return address
+                user_info = data[0]
+                display_name = user_info.get('displayName') or user_info.get('username') or address
+                created_at_str = user_info.get('createdAt') # 格式通常为 2023-10-01T...
+                
+                # 解析创建时间
+                created_at = None
+                if created_at_str:
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                
+                return {
+                    "name": display_name,
+                    "created_at": created_at,
+                    "address": address
+                }
+    except Exception as e:
+        print(f"获取用户信息失败: {e}")
+    return {"name": address, "created_at": None, "address": address}
+
+def send_instant_alert(trade_info, user_profile):
+    """发送即时报警到 Telegram"""
+    created_days = "未知"
+    if user_profile['created_at']:
+        delta = datetime.now(user_profile['created_at'].tzinfo) - user_profile['created_at']
+        created_days = f"{delta.days} 天"
+
+    msg = (
+        f"🚨 *疑似内幕交易警报* 🚨\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"💰 投注金额: `${trade_info['bet_size']}`\n"
+        f"👤 用户: `{user_profile['name']}`\n"
+        f"📅 账号年龄: `{created_days}`\n"
+        f"📊 预测目标: *{trade_info['token_outcome_name']}*\n"
+        f"🏟️ 市场: {trade_info['market']}\n"
+        f"⏰ 时间: {trade_info['timestamp']}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🔍 *特征*: 新账号大额首投"
+    )
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
+    requests.post(url, json=payload)
 
 def run_task():
-    print(f"[{datetime.now()}] 开始抓取过去 24 小时的所有大额交易...")
-    
-    # 1. 设置 24 小时的时间截止线
-    cutoff_time = datetime.now() - timedelta(hours=24)
-    cutoff_ts = int(cutoff_time.timestamp())
-    
-    all_results = []
-    last_timestamp = None # 用于分页
-    
-    while True:
-        # 2. 构造请求参数
-        params = {
-            "limit": 100,
-            "filterType": "CASH",
-            "filterAmount": MIN_BET_USD,
-            "takerOnly": "true"
-        }
-        # 如果有上一次抓取的最后时间，则从那个时间点继续往前查
-        if last_timestamp:
-            params["timestamp"] = last_timestamp
+    print(f"[{datetime.now()}] 启动扫描...")
+    params = {"limit": 50, "filterType": "CASH", "filterAmount": MIN_BET_USD, "takerOnly": "true"}
 
-        try:
-            response = requests.get(DATA_API_URL, params=params, timeout=15)
-            trades = response.json()
+    try:
+        response = requests.get(DATA_API_URL, params=params, timeout=15)
+        trades = response.json()
+        if not trades: return
 
-            if not trades or len(trades) == 0:
-                break
-
-            finished = False
-            for t in trades:
-                # 获取该交易的时间戳
-                raw_ts = int(t.get('timestamp'))
-                # API 有时返回毫秒，需要转换
-                ts_seconds = raw_ts / 1000 if raw_ts > 10**11 else raw_ts
-                
-                # 如果这笔交易已经超过 24 小时，停止抓取
-                if ts_seconds < cutoff_ts:
-                    finished = True
-                    break
-
-                # 提取数据
-                amt = t.get('amount') or (float(t.get('price', 0)) * float(t.get('size', 0)))
-                time_str = datetime.fromtimestamp(ts_seconds).strftime('%Y-%m-%d %H:%M:%S')
-
-                all_results.append({
-                    "bet_size": round(float(amt), 2),
-                    "username": get_username(t.get('proxyWallet')),
-                    "token_id": t.get('asset'),
-                    "token_outcome_name": t.get('outcome'),
-                    "market": t.get('title') or "Unknown Market",
-                    "timestamp": time_str
-                })
-                
-                # 更新最后一次看到的时间戳，供下一页使用
-                last_timestamp = raw_ts
-
-            print(f"目前已抓取 {len(all_results)} 笔符合条件的交易...")
+        for t in trades:
+            amt = float(t.get('amount') or (float(t.get('price', 0)) * float(t.get('size', 0))))
+            user_addr = t.get('proxyWallet')
             
-            if finished:
-                break
+            # 1. 基础金额过滤
+            if amt < MIN_BET_USD: continue
+
+            # 2. 获取深度用户数据
+            profile = get_user_profile(user_addr)
             
-            # 稍微停顿，避免请求过快被封 IP
-            time.sleep(0.5)
+            # 3. 判定“内幕交易”逻辑
+            # 规则：创建时间 < 10天 (由于API限制，我们通过创建日期判定)
+            is_new_account = False
+            if profile['created_at']:
+                days_old = (datetime.now(profile['created_at'].tzinfo) - profile['created_at']).days
+                if days_old <= 10:
+                    is_new_account = True
 
-        except Exception as e:
-            print(f"抓取分页时出错: {e}")
-            break
+            # 封装交易信息
+            trade_data = {
+                "bet_size": round(amt, 2),
+                "token_outcome_name": t.get('outcome'),
+                "market": t.get('title') or "Unknown",
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
 
-    # 3. 生成 CSV 并发送
-    if all_results:
-        df = pd.DataFrame(all_results)
-        # 去重（防止分页重叠）
-        df = df.drop_duplicates()
-        df = df[["bet_size", "username", "token_id", "token_outcome_name", "market", "timestamp"]]
-        
-        filename = f"Whale_Bets_24H_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-        df.to_csv(filename, index=False, encoding='utf-8-sig')
-        
-        # 发送至 Telegram
-        send_to_telegram(filename, len(df))
-    else:
-        print("过去 24 小时内未发现符合条件的交易。")
+            # 触发即时报警
+            if is_new_account:
+                print(f"🚩 发现可疑交易: {profile['name']} (新账号)")
+                send_instant_alert(trade_data, profile)
+                # 防止触发频率过快被 Telegram 封禁
+                time.sleep(1)
 
-def send_to_telegram(file_path, count):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
-    caption = (
-        f"🐳 *Polymarket 24小时全量报告*\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"💰 门槛: > ${MIN_BET_USD}\n"
-        f"📊 总计: {count} 笔交易\n"
-        f"📅 周期: 过去 24 小时\n"
-    )
-    with open(file_path, 'rb') as f:
-        requests.post(url, data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "Markdown"}, files={"document": f})
-    os.remove(file_path)
+    except Exception as e:
+        print(f"执行错误: {e}")
 
 if __name__ == "__main__":
     run_task()
