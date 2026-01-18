@@ -41,11 +41,56 @@ CATEGORY_KEYWORDS = {
         "altcoin", "stablecoin", "usdt", "usdc", "airdrop", "memecoin"
     ],
     "体育": [
+        # 联赛和赛事
         "nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball", 
         "baseball", "hockey", "tennis", "golf", "ufc", "mma", "boxing",
         "olympics", "world cup", "super bowl", "championship", "playoff",
+        "premier league", "epl", "la liga", "champions league", "ucl",
+        "fifa", "ligue 1", "esports", "lol", "league of legends", "lck", "lpl",
+        "nba finals", "nfl playoffs", "nba champion",
+        # 球星
         "mvp", "lebron", "curry", "mahomes", "brady", "messi", "ronaldo",
-        "体育", "比赛", "冠军", "espn", "sports"
+        "体育", "比赛", "冠军", "espn", "sports",
+        # NFL 球队 (32队)
+        "bills", "dolphins", "patriots", "jets",
+        "ravens", "bengals", "browns", "steelers",
+        "texans", "colts", "jaguars", "titans",
+        "broncos", "chiefs", "raiders", "chargers",
+        "cowboys", "giants", "eagles", "commanders",
+        "bears", "lions", "packers", "vikings",
+        "falcons", "panthers", "saints", "buccaneers",
+        "cardinals", "rams", "49ers", "seahawks",
+        # NBA 球队 (30队)
+        "celtics", "nets", "knicks", "76ers", "raptors",
+        "bulls", "cavaliers", "pistons", "pacers", "bucks",
+        "hawks", "hornets", "heat", "magic", "wizards",
+        "nuggets", "timberwolves", "thunder", "trail blazers", "jazz",
+        "warriors", "clippers", "lakers", "suns", "kings",
+        "mavericks", "rockets", "grizzlies", "pelicans", "spurs",
+        "oklahoma city", "boston", "golden state", "los angeles",
+        # 英超球队 (Premier League)
+        "arsenal", "aston villa", "bournemouth", "brentford", "brighton",
+        "chelsea", "crystal palace", "everton", "fulham", "ipswich",
+        "leicester", "liverpool", "manchester city", "manchester united",
+        "newcastle", "nottingham forest", "southampton", "tottenham",
+        "west ham", "wolves", "wolverhampton",
+        # 西甲球队 (La Liga)
+        "real madrid", "barcelona", "atletico madrid", "athletic bilbao",
+        "real sociedad", "villarreal", "real betis", "sevilla", "valencia",
+        "deportivo alaves", "getafe", "osasuna", "celta vigo", "mallorca",
+        # 欧冠/意甲/法甲/德甲热门球队
+        "bayern munich", "borussia dortmund", "psg", "paris saint-germain",
+        "juventus", "inter milan", "ac milan", "napoli", "roma",
+        "bologna", "fiorentina", "ajax", "benfica", "porto",
+        # 法甲球队 (Polymarket 提到的)
+        "stade rennais", "le havre", "rennes",
+        # NHL 球队
+        "lightning", "stars", "bruins", "maple leafs", "canadiens",
+        "rangers", "islanders", "flyers", "penguins", "capitals",
+        "hurricanes", "panthers", "red wings", "blackhawks", "avalanche",
+        "oilers", "flames", "canucks", "kraken", "golden knights",
+        # 电竞战队 (Esports)
+        "t1", "drx", "jd gaming", "gen.g", "cloud9", "fnatic", "g2"
     ],
     "传统金融": [
         "fed", "interest rate", "inflation", "gdp", "unemployment", "stock",
