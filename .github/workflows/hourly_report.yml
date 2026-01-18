@@ -2,9 +2,8 @@ name: Hourly Polymarket Insider Monitor
 
 on:
   schedule:
-    # 每小时运行一次 (UTC 时间每小时 0 分)
     - cron: '0 * * * *'
-  workflow_dispatch: # 支持手动运行测试
+  workflow_dispatch:
 
 jobs:
   monitor:
@@ -25,5 +24,14 @@ jobs:
 
       - name: Run script
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}  # 这一行至关重要
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GOOGLE_SHEETS_WEBHOOK: ${{ secrets.GOOGLE_SHEETS_WEBHOOK }}
         run: python polymarket_agent.py
+      
+      - name: Upload CSV artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: insider-alerts-history
+          path: insider_alerts_history.csv
+          retention-days: 30
