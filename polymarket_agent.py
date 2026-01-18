@@ -13,94 +13,103 @@ MIN_BET_USD = 3000
 DATA_API_URL = "https://data-api.polymarket.com"
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 
+def parse_timestamp(time_str):
+    """解析时间戳，支持多种格式"""
+    if not time_str:
+        return None
+    
+    try:
+        if isinstance(time_str, (int, float)):
+            # 如果是时间戳（秒或毫秒）
+            if time_str > 1e10:  # 毫秒时间戳
+                return datetime.fromtimestamp(time_str / 1000, tz=timezone.utc)
+            else:  # 秒时间戳
+                return datetime.fromtimestamp(time_str, tz=timezone.utc)
+        elif isinstance(time_str, str):
+            # 处理 ISO 格式字符串
+            if time_str.endswith('Z'):
+                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+            else:
+                dt = datetime.fromisoformat(time_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+    except Exception as e:
+        print(f"⚠️ DEBUG - 时间解析失败: {e}, 原始值: {time_str}")
+    return None
+
 def get_user_profile(address):
     """获取显示名称和创建时间（通过第一笔交易时间估算）"""
     # 由于 Gamma API 需要认证，改用 data-api 获取用户的第一笔交易时间
     try:
         # 方法1: 尝试从用户活动数据中获取第一笔交易时间
-        res = requests.get(f"{DATA_API_URL}/activity?user={address}&limit=1000&sort=asc", timeout=10)
+        res = requests.get(f"{DATA_API_URL}/activity?user={address}&limit=1000", timeout=10)
         if res.status_code == 200:
             data = res.json()
             if data and len(data) > 0:
-                # 获取第一笔交易的时间戳
-                first_trade = data[0]
-                # 尝试多种可能的时间字段
-                time_str = (first_trade.get('timestamp') or 
-                           first_trade.get('time') or 
-                           first_trade.get('createdAt') or
-                           first_trade.get('created_at') or
-                           first_trade.get('date'))
+                # 找出最早的一笔交易（按时间戳排序）
+                earliest_trade = None
+                earliest_time = None
                 
-                created_at = None
-                if time_str:
-                    try:
-                        # 处理不同的时间格式
-                        if isinstance(time_str, (int, float)):
-                            # 如果是时间戳（秒或毫秒）
-                            if time_str > 1e10:  # 毫秒时间戳
-                                dt = datetime.fromtimestamp(time_str / 1000, tz=timezone.utc)
-                            else:  # 秒时间戳
-                                dt = datetime.fromtimestamp(time_str, tz=timezone.utc)
-                        elif isinstance(time_str, str):
-                            # 处理 ISO 格式字符串
-                            if time_str.endswith('Z'):
-                                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-                            else:
-                                dt = datetime.fromisoformat(time_str)
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc)
-                        else:
-                            dt = None
-                        
+                for trade in data:
+                    # 尝试多种可能的时间字段
+                    time_str = (trade.get('timestamp') or 
+                               trade.get('time') or 
+                               trade.get('createdAt') or
+                               trade.get('created_at') or
+                               trade.get('date') or
+                               trade.get('blockTimestamp'))
+                    
+                    if time_str:
+                        dt = parse_timestamp(time_str)
                         if dt:
-                            created_at = dt
-                            print(f"✅ DEBUG - 从第一笔交易获取创建时间: {created_at}")
-                    except Exception as parse_error:
-                        print(f"⚠️ DEBUG - 时间解析失败: {parse_error}, 原始值: {time_str}")
+                            if earliest_time is None or dt < earliest_time:
+                                earliest_time = dt
+                                earliest_trade = trade
                 
-                # 尝试从交易数据中获取用户名（如果有）
-                display_name = (first_trade.get('user') or 
-                               first_trade.get('username') or 
-                               first_trade.get('displayName') or 
-                               address)
-                
-                return {"name": display_name, "created_at": created_at}
+                if earliest_trade and earliest_time:
+                    print(f"✅ DEBUG - 找到最早交易时间: {earliest_time}")
+                    
+                    # 尝试从交易数据中获取用户名（如果有）
+                    display_name = (earliest_trade.get('user') or 
+                                   earliest_trade.get('username') or 
+                                   earliest_trade.get('displayName') or 
+                                   address)
+                    
+                    return {"name": display_name, "created_at": earliest_time}
         
         # 方法2: 如果 activity API 没有返回数据，尝试从 trades API 获取
         print(f"⚠️ DEBUG - activity API 无数据，尝试从 trades API 获取...")
-        res2 = requests.get(f"{DATA_API_URL}/trades?user={address}&limit=1&sort=asc", timeout=10)
+        res2 = requests.get(f"{DATA_API_URL}/trades?user={address}&limit=1000", timeout=10)
         if res2.status_code == 200:
             trades = res2.json()
             if trades and len(trades) > 0:
-                first_trade = trades[0]
-                time_str = (first_trade.get('timestamp') or 
-                           first_trade.get('time') or 
-                           first_trade.get('createdAt') or
-                           first_trade.get('created_at'))
+                # 找出最早的一笔交易
+                earliest_trade = None
+                earliest_time = None
                 
-                if time_str:
-                    try:
-                        if isinstance(time_str, (int, float)):
-                            if time_str > 1e10:
-                                dt = datetime.fromtimestamp(time_str / 1000, tz=timezone.utc)
-                            else:
-                                dt = datetime.fromtimestamp(time_str, tz=timezone.utc)
-                        elif isinstance(time_str, str):
-                            if time_str.endswith('Z'):
-                                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-                            else:
-                                dt = datetime.fromisoformat(time_str)
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc)
-                        
+                for trade in trades:
+                    time_str = (trade.get('timestamp') or 
+                               trade.get('time') or 
+                               trade.get('createdAt') or
+                               trade.get('created_at') or
+                               trade.get('blockTimestamp'))
+                    
+                    if time_str:
+                        dt = parse_timestamp(time_str)
                         if dt:
-                            print(f"✅ DEBUG - 从第一笔交易获取创建时间: {dt}")
-                            return {"name": address, "created_at": dt}
-                    except Exception as e:
-                        print(f"⚠️ DEBUG - 时间解析失败: {e}")
+                            if earliest_time is None or dt < earliest_time:
+                                earliest_time = dt
+                                earliest_trade = trade
+                
+                if earliest_time:
+                    print(f"✅ DEBUG - 从第一笔交易获取创建时间: {earliest_time}")
+                    return {"name": address, "created_at": earliest_time}
         
     except Exception as e:
         print(f"⚠️ 获取用户 Profile 失败 ({address}): {e}")
+        import traceback
+        traceback.print_exc()
     
     # 如果所有方法都失败，返回默认值
     print(f"⚠️ DEBUG - 无法获取账号创建时间，使用默认值")
