@@ -315,12 +315,72 @@ def get_user_profile(address):
 def get_user_trade_count(address):
     """获取用户历史交易总数"""
     try:
-        res = requests.get(f"{DATA_API_URL}/activity?user={address}&limit=1", timeout=10)
+        # 尝试从 profile API 获取交易次数
+        profile_url = f"https://polymarket.com/api/profile/{address}"
+        res = requests.get(profile_url, timeout=10)
         if res.status_code == 200:
             data = res.json()
-            return len(data) if data else 0
-    except:
-        return 99
+            # 尝试从 profile 数据中获取交易数
+            if isinstance(data, dict):
+                # 可能的字段名
+                trade_count = (data.get('tradesCount') or 
+                              data.get('trades_count') or 
+                              data.get('totalTrades') or
+                              data.get('numTrades') or
+                              data.get('positionsCount') or
+                              data.get('positions_count'))
+                if trade_count is not None:
+                    print(f"✅ DEBUG - 从 profile API 获取交易次数: {trade_count}")
+                    return int(trade_count)
+        
+        # 备用方案：查询多页交易数据来估算
+        total_count = 0
+        cursor = None
+        max_pages = 10  # 最多查询10页，避免超时
+        
+        for page in range(max_pages):
+            url = f"{DATA_API_URL}/activity?user={address}&limit=500"
+            if cursor:
+                url += f"&cursor={cursor}"
+            
+            res = requests.get(url, timeout=10)
+            if res.status_code != 200:
+                break
+                
+            data = res.json()
+            if not data or len(data) == 0:
+                break
+            
+            total_count += len(data)
+            
+            # 如果返回的数据少于 limit，说明已经到最后一页
+            if len(data) < 500:
+                break
+            
+            # 获取下一页的 cursor（如果 API 支持）
+            # 通常是最后一条记录的某个字段
+            if isinstance(data, list) and len(data) > 0:
+                last_item = data[-1]
+                cursor = last_item.get('id') or last_item.get('cursor')
+                if not cursor:
+                    # 如果没有 cursor，使用偏移量
+                    break
+        
+        if total_count > 0:
+            print(f"✅ DEBUG - 从 activity API 统计交易次数: {total_count}+")
+            return total_count
+        
+        # 最后备用：从 trades API 获取
+        res = requests.get(f"{DATA_API_URL}/trades?user={address}&limit=500", timeout=10)
+        if res.status_code == 200:
+            trades = res.json()
+            if trades:
+                print(f"✅ DEBUG - 从 trades API 统计交易次数: {len(trades)}+")
+                return len(trades)
+                
+    except Exception as e:
+        print(f"⚠️ DEBUG - 获取交易次数失败: {e}")
+        return 99  # 报错则返回较大值，避免误报
     return 0
 
 
