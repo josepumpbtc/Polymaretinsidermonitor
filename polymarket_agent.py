@@ -28,11 +28,30 @@ GOOGLE_SHEETS_WEBHOOK = os.getenv("GOOGLE_SHEETS_WEBHOOK")
 # --- 市场分类关键词 ---
 CATEGORY_KEYWORDS = {
     "政治": [
-        "president", "election", "trump", "biden", "democrat", "republican", 
-        "senate", "congress", "governor", "mayor", "vote", "ballot", "political",
-        "nomination", "primary", "cabinet", "impeach", "政治", "选举", "总统",
-        "white house", "supreme court", "vance", "newsom", "desantis", "harris",
-        "obama", "clinton", "pelosi", "mcconnell", "aoc", "bernie", "warren"
+        # 基础政治词汇
+        "president", "election", "democrat", "republican", "senate", "congress",
+        "governor", "mayor", "vote", "ballot", "political", "nomination", "primary",
+        "cabinet", "impeach", "政治", "选举", "总统", "white house", "supreme court",
+        "midterms", "primaries", "mayoral", "courts", "regime",
+        # 美国政治人物
+        "trump", "biden", "vance", "jd vance", "newsom", "gavin newsom", "desantis",
+        "harris", "kamala", "obama", "clinton", "pelosi", "mcconnell", "aoc",
+        "alexandria ocasio-cortez", "bernie", "warren", "marco rubio", "rubio",
+        "elon musk", "musk",
+        # 美联储相关
+        "fed chair", "fed decision", "kevin warsh", "warsh", "rick rieder", "rieder",
+        "powell", "yellen", "federal reserve",
+        # 国际政治 - 国家/地区
+        "venezuela", "ukraine", "russia", "ceasefire", "gaza", "israel", "iran",
+        "greenland", "portugal", "vietnam", "lebanon", "middle east", "geopolitics",
+        # 国际政治人物
+        "antonio jose seguro", "seguro", "joao cotrim figueiredo", "figueiredo",
+        "andre ventura", "ventura", "to lam", "phan van giang",
+        # 党派和组织
+        "communist party", "liberal", "conservative", "independent", "ind",
+        # 热门话题
+        "epstein", "trade war", "us strikes", "us election", "global elections",
+        "nyc mayor", "minnesota unrest", "presidential nominee", "nominee 2028"
     ],
     "Crypto": [
         "bitcoin", "btc", "ethereum", "eth", "crypto", "blockchain", "token",
