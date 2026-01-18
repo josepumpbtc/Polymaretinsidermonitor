@@ -225,22 +225,47 @@ def save_to_csv(alert_data):
 def save_to_google_sheets(alert_data):
     """保存警报到 Google Sheets（通过 Apps Script Web App）"""
     if not GOOGLE_SHEETS_WEBHOOK:
+        print("⚠️ Google Sheets: 未配置 GOOGLE_SHEETS_WEBHOOK")
         return False
     
     try:
+        print(f"📤 正在发送数据到 Google Sheets...")
+        print(f"   URL: {GOOGLE_SHEETS_WEBHOOK[:50]}...")
+        
         response = requests.post(
             GOOGLE_SHEETS_WEBHOOK,
             json=alert_data,
-            timeout=10
+            headers={"Content-Type": "application/json"},
+            timeout=15
         )
+        
+        print(f"   状态码: {response.status_code}")
+        print(f"   响应: {response.text[:200]}")
+        
         if response.status_code == 200:
-            print(f"✅ 已保存到 Google Sheets")
-            return True
+            try:
+                result = response.json()
+                if result.get("status") == "success":
+                    print(f"✅ 已保存到 Google Sheets")
+                    return True
+                else:
+                    print(f"⚠️ Google Sheets 返回错误: {result.get('message', 'unknown')}")
+                    return False
+            except:
+                # 即使无法解析 JSON，状态码 200 也算成功
+                print(f"✅ 已保存到 Google Sheets (状态码 200)")
+                return True
         else:
-            print(f"⚠️ Google Sheets 保存失败: {response.status_code}")
+            print(f"⚠️ Google Sheets 保存失败: HTTP {response.status_code}")
+            print(f"   响应内容: {response.text[:500]}")
             return False
+    except requests.exceptions.Timeout:
+        print(f"⚠️ Google Sheets 请求超时")
+        return False
     except Exception as e:
         print(f"⚠️ Google Sheets 保存失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
