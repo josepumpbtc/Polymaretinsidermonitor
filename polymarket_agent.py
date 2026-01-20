@@ -553,8 +553,17 @@ def run_task():
                     "market": market_title
                 }
                 
-                # 发送警报
-                if send_instant_alert(trade_data, profile, bet_count, category):
+                # 只推送政治类别到 Telegram
+                should_send_telegram = (category == "政治")
+                telegram_sent = False
+                
+                if should_send_telegram:
+                    telegram_sent = send_instant_alert(trade_data, profile, bet_count, category)
+                else:
+                    print(f"⏭️ 跳过非政治类别的 TG 推送: {category}")
+                    telegram_sent = True  # 标记为"处理完成"以继续保存到 CSV/Sheets
+                
+                if telegram_sent:
                     # 标记为已发送
                     mark_trade_sent(trade_id, sent_trades)
                     
