@@ -431,6 +431,9 @@ def send_instant_alert(trade_info, profile, bet_count, category):
     
     emoji = category_emoji.get(category, "❓")
 
+    # 格式化概率显示
+    price_str = f"{trade_info.get('price_percent')}%" if trade_info.get('price_percent') is not None else "未知"
+    
     msg = (
         f"🚨 *疑似内幕交易警报* 🚨\n"
         f"━━━━━━━━━━━━━━━\n"
@@ -439,7 +442,10 @@ def send_instant_alert(trade_info, profile, bet_count, category):
         f"📅 账号年龄: `{age_str}`\n"
         f"📊 历史笔数: `{bet_count}` 次\n"
         f"🎯 预测结果: *{trade_info['outcome']}*\n"
+        f"↕️ 方向: *{trade_info.get('side', '未知')}*\n"
+        f"📈 买入概率: `{price_str}`\n"
         f"🏟️ 市场: {trade_info['market']}\n"
+        f"🎲 市场类型: *{trade_info.get('market_type', '未知')}*\n"
         f"{emoji} 类别: *{category}*\n"
         f"━━━━━━━━━━━━━━━\n"
         f"🔍 *特征*: 疑似新账号/低频账号大额交易"
@@ -547,10 +553,39 @@ def run_task():
                 market_title = t.get('title') or "未知市场"
                 category = categorize_market(market_title)
                 
+                # 提取交易方向 (BUY/SELL)
+                side = t.get('side', '').upper()
+                if side == 'BUY':
+                    side_display = "买入 (Buy)"
+                elif side == 'SELL':
+                    side_display = "卖出 (Sell)"
+                else:
+                    side_display = side or "未知"
+                
+                # 提取买入概率 (price 是 0-1 之间的值)
+                price = t.get('price')
+                if price is not None:
+                    try:
+                        price_percent = round(float(price) * 100, 1)
+                    except:
+                        price_percent = None
+                else:
+                    price_percent = None
+                
+                # 判断市场类型：Yes/No 是二元市场，其他是多选市场
+                outcome = t.get('outcome', '')
+                if outcome and outcome.lower() in ['yes', 'no']:
+                    market_type = "Yes/No 二元"
+                else:
+                    market_type = "多可能性"
+                
                 trade_data = {
                     "bet_size": round(amt, 2),
-                    "outcome": t.get('outcome'),
-                    "market": market_title
+                    "outcome": outcome,
+                    "market": market_title,
+                    "side": side_display,
+                    "price_percent": price_percent,
+                    "market_type": market_type
                 }
                 
                 # 只推送政治类别到 Telegram
@@ -576,7 +611,10 @@ def run_task():
                         "user_address": address,
                         "user_name": profile['name'],
                         "bet_size_usdc": round(amt, 2),
-                        "outcome": t.get('outcome'),
+                        "outcome": outcome,
+                        "side": side_display,
+                        "price_percent": price_percent if price_percent is not None else "未知",
+                        "market_type": market_type,
                         "market": market_title,
                         "category": category,
                         "account_age_days": days_old if days_old is not None else "未知",
